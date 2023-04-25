@@ -16,7 +16,7 @@ class MinimalPublisher(Node):
 
     def timer_callback(self):
         msg = String()
-        msg.data = 'Hello World: %d' % self.i
+        msg.data = 'gate'
         self.publisher1_.publish(msg)
         msg = String()
         msg.data = 'Hello World 2: %d' % self.i

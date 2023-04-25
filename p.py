@@ -44,7 +44,7 @@ class Mission:
         self.machine.add_states(self.config["states"])
         self.machine.add_transitions(self.config["transitions"])
 
-        self.events: TopicEvent = []
+        self.events: list[TopicEvent] = []
         if self.config["events"]:
             print(self.config["events"])
             for event in self.config["events"]:

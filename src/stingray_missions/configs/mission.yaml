@@ -8,4 +8,4 @@ transitions:
   - {trigger: not_found, source: rotate_clockwise, dest: rotate_counter_clockwise}
   - {trigger: not_found, source: rotate_counter_clockwise, dest: finish}
 events: 
-  - {type: TopicEvent, topic: /stingray/mission/search/rotate_clockwise, trigger: found, count: 5, data: gate}
+  - {type: TopicEvent, topic: topic1, trigger: found, count: 5, data: gate}
