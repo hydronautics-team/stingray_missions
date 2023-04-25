@@ -1,0 +1,12 @@
+mission_name: search
+states: 
+  - ROTATE_CLOCK
+  - ROTATE_ANTICLOCK
+transitions: 
+  - {trigger: go, source: START, dest: ROTATE_CLOCK}
+  - {trigger: found, source: [ROTATE_CLOCK, ROTATE_ANTICLOCK], dest: FINISH}
+  - {trigger: not_found, source: ROTATE_CLOCK, dest: ROTATE_ANTICLOCK}
+  - {trigger: not_found, source: ROTATE_ANTICLOCK, dest: FINISH}
+events: 
+  - {name: gate_detection_event, type: TopicEvent, topic: topic1, trigger: not_found, count: 5, data: gate, state: ROTATE_CLOCK}
+  - {name: gate_detection_event, type: TopicEvent, topic: topic2, trigger: not_found, count: 5, data: gate, state: ROTATE_ANTICLOCK}

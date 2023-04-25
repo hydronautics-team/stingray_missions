@@ -10,7 +10,7 @@ class MinimalPublisher(Node):
         super().__init__('minimal_publisher')
         self.publisher1_ = self.create_publisher(String, 'topic1', 10)
         self.publisher2_ = self.create_publisher(String, 'topic2', 10)
-        timer_period = 0.5  # seconds
+        timer_period = 1  # seconds
         self.timer = self.create_timer(timer_period, self.timer_callback)
         self.i = 0
 
