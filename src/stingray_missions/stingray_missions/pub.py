@@ -8,18 +8,18 @@ class MinimalPublisher(Node):
 
     def __init__(self):
         super().__init__('minimal_publisher')
-        self.publisher1_ = self.create_publisher(String, 'topic1', 10)
-        self.publisher2_ = self.create_publisher(String, 'topic2', 10)
+        self.publisher1_ = self.create_publisher(String, 'gate_clock', 10)
+        self.publisher2_ = self.create_publisher(String, 'gate_anticlock', 10)
         timer_period = 1  # seconds
         self.timer = self.create_timer(timer_period, self.timer_callback)
         self.i = 0
 
     def timer_callback(self):
         msg = String()
-        msg.data = 'gate'
+        msg.data = 'gate_clock'
         self.publisher1_.publish(msg)
-        msg = String()
-        msg.data = 'Hello World 2: %d' % self.i
+        self.get_logger().info('Publishing: "%s"' % msg.data)
+        msg.data = 'gate_anticlock'
         self.publisher2_.publish(msg)
         self.get_logger().info('Publishing: "%s"' % msg.data)
         self.i += 1
