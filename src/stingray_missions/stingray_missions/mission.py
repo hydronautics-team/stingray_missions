@@ -1,6 +1,7 @@
 from transitions.extensions.asyncio import AsyncMachine
 import logging
 from rclpy.node import Node
+import asyncio
 
 from stingray_missions.event import TopicEvent
 
@@ -10,17 +11,22 @@ logger = logging.getLogger(__name__)
 
 
 class Mission(object):
-    def __init__(self, node: Node, mission_description: dict):
+    def __init__(self, loop: asyncio.AbstractEventLoop, node: Node, mission_description: dict):
         """Mission class for executing a mission from a config file"""
+        self.loop = loop
         self.node = node
         self.desc = mission_description
 
         self.name = self.desc["name"]
         self.events: dict[str, TopicEvent] = {}
+        self.expiration_timer = None
 
         self.add_machine()
         self.add_states(self.desc["states"])
         self.add_transitions(self.desc["transitions"])
+
+        logger.info(f"Mission {self.name} created")
+        # logger.info(f"States: {self.machine.states}")
 
     def add_machine(self):
         """Registering the state machine from the config file"""
@@ -31,11 +37,13 @@ class Mission(object):
         self.go_transition = 'go'
         self.abort_transition = 'abort'
         self.reset_transition = 'reset'
+        self.timeout_transition = 'timeout'
 
-        self.default_states = [self.init_state, self.success_state]
+        self.default_states = [self.init_state,
+                               self.success_state, self.failure_state]
         if self.desc["default_transitions"]:
             self.default_transitions = [
-                [self.abort_transition, "*", self.success_state]]
+                [self.abort_transition, "*", self.failure_state]]
         else:
             self.default_transitions = []
 
@@ -81,25 +89,56 @@ class Mission(object):
     def add_transitions(self, transitions: dict):
         for transition in transitions:
             self.machine.add_transition(trigger=transition['trigger'].format(
-                go=self.go_transition, abort=self.abort_transition),
+                go=self.go_transition, abort=self.abort_transition, reset=self.reset_transition, timeout=self.timeout_transition),
                 source=transition['source'],
                 dest=transition['dest'].format(
                 init=self.init_state, success=self.success_state, failure=self.failure_state))
 
-    async def on_enter_FINISH(self):
-        """Executing on entering the FINISH state"""
+    async def on_enter_FAILURE(self):
+        """Executing on entering the FAILURE state"""
         for event in self.events.values():
             await event.unsubscribe(self.node)
-        logger.info("Mission finished")
+        logger.info("Mission failed")
+
+    async def on_enter_SUCCESS(self):
+        """Executing on entering the SUCCESS state"""
+        for event in self.events.values():
+            await event.unsubscribe(self.node)
+        logger.info("Mission succeeded")
 
     async def execute_state(self):
         """Executing as soon as the state is entered"""
-        if self.state in self.events:
+        logger.info(f"Executing {self.state}")
+        logger.info(f"Transitions: {self.machine.get_triggers(self.state)}")
+        try:
             await self.events[self.state].subscribe(self.node)
+        except KeyError:
+            logger.info(f"No event for state {self.state}")
+        try:
+            timeout_value = self.desc["states"][self.state]["expire_time"]
+            self.expiration_timer = self.node.create_timer(
+                timeout_value, self.countdown)
+            logger.info(
+                f"State {self.state} will expire in {timeout_value} seconds")
+        except KeyError:
+            logger.info(f"No expiration time for state {self.state}")
+
         logger.info(f"{self.state} started")
 
     async def leave_state(self):
         """Executing before leaving the state"""
-        if self.state in self.events:
+        try:
             await self.events[self.state].unsubscribe(self.node)
+        except KeyError:
+            logger.info(f"No event for state {self.state}")
+        if self.expiration_timer and not self.expiration_timer.is_ready():
+            self.expiration_timer.cancel()
+            self.expiration_timer = None
+            logger.info(f"Cancel expiration timer for {self.state}")
         logger.info(f"{self.state} ended")
+
+    async def countdown(self):
+        """Countdown for the mission"""
+        logger.info(
+            f"State {self.state} expired. Triggering {self.timeout_transition}")
+        await self.trigger(self.timeout_transition)

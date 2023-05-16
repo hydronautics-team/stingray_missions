@@ -4,13 +4,13 @@ states:
   ROTATE_CLOCK:
     initial: true
     event: object_detection_event_gate_clock
-    expire_time: 10
+    expire_time: 5
     action: 
       type: "rotation"
       args: { speed: (0, 0, 15), angle: 90 }
   ROTATE_ANTICLOCK:
     event: object_detection_event_gate_anticlock
-    expire_time: 10
+    expire_time: 5
     action: 
       type: "rotation"
       args: { speed: (0, 0, -15), angle: 90 }
@@ -18,19 +18,19 @@ states:
     event: no_event
 transitions:
   - { trigger: found, source: [ROTATE_CLOCK, ROTATE_ANTICLOCK], dest: "{success}" }
-  - { trigger: not_found, source: ROTATE_CLOCK, dest: ROTATE_ANTICLOCK }
-  - { trigger: not_found, source: ROTATE_ANTICLOCK, dest: "{failure}" }
+  - { trigger: "{timeout}", source: ROTATE_CLOCK, dest: ROTATE_ANTICLOCK }
+  - { trigger: "{timeout}", source: ROTATE_ANTICLOCK, dest: "{failure}" }
 events:
   object_detection_event_gate_clock:
     type: TopicEvent
     topic: gate_clock
     trigger: found
-    count: 5
+    count: 2
     data: "gate"
   object_detection_event_gate_anticlock:
     type: TopicEvent
     topic: gate_anticlock
     trigger: found
-    count: 5
+    count: 12
     data: "gate_anticlock"
 
