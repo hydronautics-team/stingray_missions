@@ -1,0 +1,52 @@
+{
+    "scenarios": {
+        "TestScenario": {
+            "missions": {
+                "SearchMission": {
+                    "states": {
+                        "ROTATE_CLOCK": {
+                            "initial": true,
+                            "event": "object_detection_event_gate_clock",
+                            "expire_time": 5.0,
+                            "actions": {
+                                "1": {
+                                    "name": "",
+                                    "type": "rotation",
+                                    "goal": {}
+                                }
+                            }
+                        }
+                    },
+                    "transitions": [
+                        {
+                            "trigger": "found",
+                            "source": ["ROTATE_CLOCK", "ROTATE_ANTICLOCK"],
+                            "dest": "{SUCCESS}"
+                        },
+                        {
+                            "trigger": "{timeout}",
+                            "source": "ROTATE_CLOCK",
+                            "dest": "ROTATE_ANTICLOCK"
+                        },
+                        {
+                            "trigger": "{timeout}",
+                            "source": "ROTATE_ANTICLOCK",
+                            "dest": "{FAILURE}"
+                        }
+                    ],
+                    "events": [
+                        {
+                            "name": "",
+                            "type": "TopicEvent",
+                            "trigger": "",
+                            "topic": "",
+                            "data": "",
+                            "count": 0
+                        }
+                    ],
+                    "default_transitions": false
+                }
+            }
+        }
+    }
+}

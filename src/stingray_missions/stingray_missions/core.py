@@ -1,83 +1,124 @@
 from transitions.extensions.asyncio import AsyncMachine
 import logging
 from rclpy.node import Node
-import asyncio
 
 from stingray_missions.event import TopicEvent
 
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-class Mission(object):
-    def __init__(self, loop: asyncio.AbstractEventLoop, node: Node, mission_description: dict):
-        """Mission class for executing a mission from a config file"""
-        self.loop = loop
-        self.node = node
-        self.desc = mission_description
+class StateAction():
+    def __init__(self,
+                 type: str = "",
+                 action: str = "",
+                 **kwargs):
+        """State class"""
+        self.type = type
+        self.action = action
+        self.kwargs = kwargs
+        logger.info(f"StateAction Unused kwargs: {kwargs}")
 
-        self.name = self.desc["name"]
+
+class TransitionEvent():
+    def __init__(self,
+                 type: str = "",
+                 trigger: str = "",
+                 **kwargs):
+        """State class"""
+        self.type = type
+        self.trigger = trigger
+        self.kwargs = kwargs
+        logger.info(f"TransitionEvent Unused kwargs: {kwargs}")
+
+
+class StateDescription():
+    def __init__(self,
+                 transition_event: dict = {},
+                 expire_time: float = 5,
+                 action: dict = {},
+                 **kwargs):
+        """State class"""
+        self.transition_event = TransitionEvent(**transition_event)
+        self.expire_time = expire_time
+        self.action = StateAction(**action)
+        logger.info(f"StateDescription Unused kwargs: {kwargs}")
+
+
+class MissionDescription:
+    def __init__(self,
+                 name: str = "",
+                 initial_state: str = "",
+                 states: dict = {},
+                 **kwargs
+                 ):
+        """Mission class for executing a mission from a config file"""
+        self.name = name
+        self.initial_state = initial_state
+        self.states = {k.upper(): StateDescription(**v)
+                       for k, v in states.items()}
+        logger.info(f"MissionDescription Unused kwargs: {kwargs}")
+
+
+class Mission(object):
+    def __init__(self, node: Node, mission_description: dict):
+        """Mission class for executing a mission from a config file"""
+        self.node = node
+        self.desc = MissionDescription(**mission_description)
         self.events: dict[str, TopicEvent] = {}
         self.expiration_timer = None
 
-        self.add_machine()
-        self.add_states(self.desc["states"])
-        self.add_transitions(self.desc["transitions"])
+        self._setup_fsm(mission_description)
+        logger.info(f"Mission {self.desc.name} created")
 
-        logger.info(f"Mission {self.name} created")
-        # logger.info(f"States: {self.machine.states}")
-
-    def add_machine(self):
+    def _setup_fsm(self, mission_description: dict):
         """Registering the state machine from the config file"""
 
-        self.init_state = 'INIT'
-        self.success_state = 'SUCCESS'
-        self.failure_state = 'FAILURE'
+        self.IDLE_STATE = 'IDLE'
+        self.SUCCESS_STATE = 'SUCCESS'
+        self.FAILURE_STATE = 'FAILURE'
         self.go_transition = 'go'
+        self.ok_transition = 'ok'
         self.abort_transition = 'abort'
         self.reset_transition = 'reset'
         self.timeout_transition = 'timeout'
 
-        self.default_states = [self.init_state,
-                               self.success_state, self.failure_state]
-        if self.desc["default_transitions"]:
-            self.default_transitions = [
-                [self.abort_transition, "*", self.failure_state]]
-        else:
-            self.default_transitions = []
+        states = [self.IDLE_STATE, self.SUCCESS_STATE, self.FAILURE_STATE]
+        transitions = [
+            [self.abort_transition, "*", self.FAILURE_STATE],
+            [self.reset_transition, "*", self.IDLE_STATE],
+            [self.go_transition, self.IDLE_STATE, mission_description['initial_state']]]
+
+        states += mission_description["states"].keys()
+        transitions += mission_description["transitions"]
 
         self.machine = AsyncMachine(
             model=self,
-            states=self.default_states,
-            transitions=self.default_transitions,
-            initial=self.init_state,
+            states=states,
+            transitions=transitions,
+            initial=self.IDLE_STATE,
             auto_transitions=False,
             after_state_change="execute_state",
             before_state_change="leave_state",
         )
 
-    def add_states(self, states: dict):
+        self._parse_events(mission_description["states"])
+
+    def _parse_events(self, states: dict):
         for state, args in states.items():
-            self.machine.add_state(f'{state}')
-            logger.info(f"Added state {state} : {args}")
-            if 'initial' in args and args['initial']:
-                self.machine.add_transition(
-                    trigger=self.go_transition, source=self.init_state, dest=state)
-            if args['event']:
+            if args['transition_event']:
                 try:
-                    self.add_event(
-                        state, self.desc["events"][args['event']])
+                    self._parse_event(state, args['transition_event'])
                 except KeyError:
                     logger.error(
-                        f"Event {args['event']} not found in events list")
+                        f"Event {args['transition_event']} not found in events list")
 
-    def add_event(self, state_name: str, args: dict):
+    def _parse_event(self, state_name: str, args: dict):
         """Registering events from the config file"""
         if args["type"] == "TopicEvent":
             self.events[state_name] = TopicEvent(
                 trigger_fn=self.trigger,
-                topic=args["topic"],
+                topic=args["topic_name"],
                 data=args["data"],
                 trigger=args["trigger"],
                 count=args["count"],
@@ -85,14 +126,6 @@ class Mission(object):
             logger.info(f"Added event {state_name}")
         else:
             raise ValueError("Event type not supported")
-
-    def add_transitions(self, transitions: dict):
-        for transition in transitions:
-            self.machine.add_transition(trigger=transition['trigger'].format(
-                go=self.go_transition, abort=self.abort_transition, reset=self.reset_transition, timeout=self.timeout_transition),
-                source=transition['source'],
-                dest=transition['dest'].format(
-                init=self.init_state, success=self.success_state, failure=self.failure_state))
 
     async def on_enter_FAILURE(self):
         """Executing on entering the FAILURE state"""
@@ -110,12 +143,10 @@ class Mission(object):
         """Executing as soon as the state is entered"""
         logger.info(f"Executing {self.state}")
         logger.info(f"Transitions: {self.machine.get_triggers(self.state)}")
-        try:
+        if self.state in self.events:
             await self.events[self.state].subscribe(self.node)
-        except KeyError:
-            logger.info(f"No event for state {self.state}")
         try:
-            timeout_value = self.desc["states"][self.state]["expire_time"]
+            timeout_value = self.desc.states[self.state].expire_time
             self.expiration_timer = self.node.create_timer(
                 timeout_value, self.countdown)
             logger.info(
